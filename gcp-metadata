@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+
+#**
+# @author baskar@apigee.com
+# @file
+#
+
+METADATA_URL="http://169.254.169.254/0.1/meta-data"
+GCP_METADATA_URL="http://metadata.google.internal/computeMetadata/v1/"
+
+function print_help() {
+    echo """
+    gcp-metadata v1.0.0
+    Use to retrieve GCP instance metadata from within a running GCP instance.
+    e.g. to get instance id: 'gcp-metadata -i'
+		 to get instance type: 'gcp-metadata -t'
+		 to get help: 'gcp-metadata --help'
+
+    For more information on Google Cloud meta-data, refer to the documentation at
+    https://cloud.google.com/compute/docs/storing-retrieving-metadata
+
+    Usage: gcp-metadata <option>
+    Options:
+    --all                   Show all metadata information
+    """
+}
+
+#**
+# @return true (0) if the environment is GCP, false (1) otherwise.
+#
+# checks the environment before running the code
+#
+# shellcheck disable=SC2034,SC2181
+function chk_config() {
+	response=$(curl -fs -m 5 ${METADATA_URL})
+	if [ $? -ne 0 ]; then
+		echo '[ERROR] Command not valid outside GCP instance. Please run this command within a running GCP instance.'
+		exit 1
+	fi
+}
+
+#**
+# @param ret  return code of the caller function
+# @param response  value of attribute from the called function
+# @return true (0) always
+#
+# checks the return code of the caller function
+# and prints the response if it is true (0), otherwise prints "not available".
+#
+# shellcheck disable=SC2181
+function _print_response() {
+    local ret=$1 response=$2
+	if [ $? == 0 ]; then
+		echo "${response:-not available}"
+	else
+		echo "not available"
+	fi
+	return 0
+}
+
+#**
+# @param metric_path  path of the metric to get
+# @param metric_name  name of the metric to be displayed
+# @return true (0) always
+#
+# get the requested standard metric and prints the metric based on the response
+# eg: /project-id: <project-id>
+#
+function print_std_metric() {
+    local metric_path=$1 metric_name=$2 response
+    [[ -n ${metric_name} ]] && echo -n "${metric_name}: "
+    response=$(curl -fs "${METADATA_URL}/${metric_path}")
+    _print_response "$?" "${response}"
+}
+
+#**
+# @param metric_path  path of the metric to get
+# @param metric_name  name of the metric to be displayed
+# @return true (0) always
+#
+# prints the metrics that has value as the last part of the resource
+# eg: for /zone: projects/<project-id>/zones/us-central1-a
+#
+function print_resource_metric() {
+    local metric_path=$1 metric_name=$2 response
+    [[ -n ${metric_name} ]] && echo -n "${metric_name}: "
+    response=$(print_std_metric "${metric_path}" | rev | cut -d '/' -f1 | rev)
+    _print_response "$?" "${response}"
+}
+
+#**
+# @return true (0) always
+#
+# prints the instance name by querying the 'hostname' metric
+#
+function print_instance_name() {
+    echo -n "instance-name: "
+    response=$(print_std_metric hostname | cut -d "." -f1)
+    _print_response "$?" "${response}"
+}
+
+#**
+# @return true (0) always
+#
+# prints the local hostname
+#
+function print_hostname() {
+    echo "local-hostname: $(hostname -a)"
+}
+
+#**
+# @return true (0) always
+#
+# prints the local ip address by querying the 'network'
+#
+function print_local_ipv4() {
+    echo -n "local-ipv4: "
+    response=$(curl -fs ${METADATA_URL}/network | jq -r ".networkInterface[0].ip")
+    _print_response "$?" "${response}"
+}
+
+#**
+# @return true (0) always
+#
+# prints the external ip address by querying the 'network'
+#
+function print_public_ipv4() {
+    echo -n "public-ipv4: "
+    response=$(curl -fs ${METADATA_URL}/network | jq -r ".networkInterface[0].accessConfiguration[0].externalIp")
+    _print_response "$?" "${response}"
+}
+
+#**
+# @return true (0) always
+#
+# prints the tags
+#
+function print_tags() {
+    echo -n "tags: "
+    response=$(print_std_metric tags | jq -r ". | join(\",\")")
+    _print_response "$?" "${response}"
+}
+
+#**
+# @return true (0) always
+#
+# prints all the attached disks along with their types
+#
+function print_disks() {
+    local disks disk_counts disk_index=0
+    echo "attached-disks: "
+    disks=$(curl -fs ${METADATA_URL}/attached-disks | jq ".disks")
+    disk_counts=$(echo "${disks}" | jq ". | length")
+    while [[ ${disk_index} -lt ${disk_counts} ]]; do
+        disk=$(echo "${disks}" | jq ".[${disk_index}]")
+        device_name=$(echo "${disk}" | jq -r ".deviceName")
+        device_type=$(echo "${disk}" | jq -r ".type")
+        device_index=$(echo "${disk}" | jq -r ".index")
+        echo -e '\t' "device-index $device_index:"
+        echo -e '\t\t' "device-name: ${device_name}"
+        echo -e '\t\t' "device-type: ${device_type}"
+        ((disk_index++))
+    done
+}
+
+#**
+# @return true (0) always
+#
+# prints the service account attached to the instance
+#
+function print_service_account() {
+    echo -n "service-account: "
+    response=$(print_std_metric service-accounts | jq -r ".serviceAccounts[0].serviceAccount")
+    _print_response "$?" "${response}"
+}
+
+#**
+# @return true (0) always
+#
+# prints all the metrics
+#
+function print_all() {
+    print_std_metric project-id project-id
+    print_std_metric image image
+    print_instance_name
+    print_std_metric instance-id instance-id
+    print_resource_metric machine-type instance-type
+    print_hostname
+    print_local_ipv4
+    print_public_ipv4
+    print_resource_metric zone placement
+    print_std_metric description description
+    print_disks
+    print_service_account
+    print_resource_metric attributes/instance-template instance-template
+    print_resource_metric attributes/created-by created-by
+    print_tags
+    print_std_metric  attributes/startup-script user-data
+}
+
+chk_config
+
+#**
+# command called in default mode, prints all the metrics
+#
+if [ "$#" -eq 0 ]; then
+	print_all
+fi
+
+#**
+# start processing command line arguments
+#
+while [ "$1" != "" ]; do
+	case $1 in
+	    -p  | --project-id )             print_std_metric project-id project-id                                  ;;
+        -a  | --image )                  print_std_metric image image                                            ;;
+        -n  | --instance-name )          print_instance_name                                                     ;;
+        -i  | --instance-id )            print_std_metric instance-id instance-id                                ;;
+        -t  | --instance-type )          print_resource_metric machine-type instance-type                        ;;
+        -h  | --local-hostname )         print_hostname                                                          ;;
+        -o  | --local-ipv4 )             print_local_ipv4                                                        ;;
+        -v  | --public-ipv4 )            print_public_ipv4                                                       ;;
+        -z  | --availability-zone )      print_resource_metric zone placement                                    ;;
+        -e  | --description )            print_std_metric description description                                ;;
+        -d  | --disks )                  print_disks                                                             ;;
+        -s  | --service-account )        print_service_account                                                   ;;
+        -m  | --instance-template )      print_resource_metric attributes/instance-template instance-template    ;;
+        -c  | --created-by )             print_resource_metric attributes/created-by created-by                  ;;
+        -g  | --tags )                   print_tags                                                              ;;
+        -u  | --user-data )              print_std_metric  attributes/startup-script user-data                    ;;
+	    --h | --help )                   print_help       				                                         ;;
+	    --all )                          print_all    	    				                                     ;;
+	    * )                              print_help && exit 1
+	esac
+	shift
+done
