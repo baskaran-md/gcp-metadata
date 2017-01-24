@@ -127,19 +127,6 @@ function print_hostname() {
     echo "local-hostname: $(hostname -a)"
 }
 
-
-#**
-# @return true (0) always
-#
-# prints the tags
-#
-function print_tags() {
-    echo -n "tags: "
-    response=$(print_std_metric instance/tags | jq -r ". | join(\",\")")
-    _print_response "$?" "${response}"
-}
-
-
 #**
 # @param index  disk index to fetch the details
 # @param key  metric of the disk to fetch, like device-name, index, type & mode
@@ -204,7 +191,7 @@ function print_all() {
     print_service_account
     print_resource_metric instance/attributes/instance-template instance-template
     print_resource_metric instance/attributes/created-by created-by
-    print_tags
+    print_std_metric instance/tags tags
     print_std_metric  instance/attributes/startup-script user-data
 }
 
@@ -252,7 +239,7 @@ while [ "$1" != "" ]; do
                                                             ;;
         -c  | --created-by )            print_resource_metric instance/attributes/created-by created-by
                                                             ;;
-        -g  | --tags )                  print_tags
+        -g  | --tags )                  print_std_metric instance/tags tags
                                                             ;;
         -u  | --user-data )             print_std_metric  instance/attributes/startup-script user-data
                                                             ;;
