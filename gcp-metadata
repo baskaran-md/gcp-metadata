@@ -37,7 +37,7 @@ function print_help() {
     -e/--description            Description of the instance
     -d/--disks                  All the disks attached to the instance
     -s/--service-account        IAM Profile / Service Account attached to the instance
-    -m/--instance-template      Instance template used to launch the instance
+    -l/--instance-template      Instance template used to launch the instance
     -c/--created-by             Source that created the instance, like instance group
     -g/--tags                   Tags associated to the instance
     -u/--user-data              User-supplied data. Available only if it is supplied at instance launch time.
@@ -145,7 +145,7 @@ function _get_disk_value() {
 #
 # prints all the attached disks along with their types
 #
-# shellcheck disable=SC2086
+# shellcheck disable=SC2086,SC2207
 function print_disks() {
     local disks
     echo "attached-disks: "
@@ -235,7 +235,7 @@ while [ "$1" != "" ]; do
                                                             ;;
         -s  | --service-account )       print_service_account
                                                             ;;
-        -m  | --instance-template )     print_resource_metric instance/attributes/instance-template instance-template
+        -l  | --instance-template )     print_resource_metric instance/attributes/instance-template instance-template
                                                             ;;
         -c  | --created-by )            print_resource_metric instance/attributes/created-by created-by
                                                             ;;
